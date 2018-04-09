@@ -1,0 +1,335 @@
+# GraphQL Study
+
+## 核心概念
+
+### SDL（Schema定义语言）
+
+Graphql有自己的类型系统，用于定义一个API的模式。用于写这种模式的语法叫做SDL。
+
+下面有一个如何使用SDL来顶一个简单的`Person`类型的例子:
+
+``` js
+type Person {
+    name: String!
+    age: Int!
+}
+```
+
+这个类型有两个字段，分别是`name`和`age`，它们的类型分别是`String`和`Int`。在类型后面的`!`是用来说明该字段是不可缺省的字段。
+
+SDL也可以表达类型之间的关系。在一个博客应用的例子中，一个`Person`可能与一个`Post`字段相关联。
+
+``` js
+type Post {
+    title: String!
+    author: Person!
+}
+```
+
+反过来，我们也可以把`Post`与`Person`的位置换过来:
+
+``` js
+type Person {
+    name: String!
+    age: Int!
+    posts: [Post]
+}
+```
+
+注意，我们在`Person`和`Post`之间创建了一个一对多的关系，因为在`Person`里的`posts`字段是一个Post类型数组。
+
+### 使用查询获取数据
+
+当使用REST API的时候，数据是从特定的终端加载过来的。每个终端返回具有明确的信息结构。这意味着客户端的请求数据被明确的编码在了它所连接的url上。
+
+在GraphQL中所采用的方法是截然不同的。与采用多个终端返回固定的数据结构不同，GraphQL API一般只暴露一个单独的终端。这样做是因为它返回的数据结构是不固定的。相反，它十分灵活并且让客户端决定所需要的数据是什么。
+
+这意味着客户端需要向服务器端发送更多的信息来表达它的数据需求——这种信息被叫做`query`。
+
+#### 基本的查询（Queries）
+
+让我们看一个从客户端向服务器端发送的`query`。
+
+``` js
+{
+  allPersons {
+    name
+  }
+}
+```
+
+在这次查询中的`allPersons`字段被叫做查询的根字段。根字段后面所携带的所有内容都称为查询的负载内容。在这个`query`负载内容中的唯一指定字段就是`name`。
+
+这个`query`将会返回存储在数据库中的所有人的名单。这里是一个简单的响应。
+
+``` js
+{
+  "allPersons": [
+    { "name": "Johnny" },
+    { "name": "Sarah" },
+    { "name": "Alice" }
+  ]
+}
+```
+
+注意在这个响应中，每一个人都会反回了`name`字段，但是并没有`age`字段。那是因为在`query`中指定了`name`字段。如果希望返回的响应中存在`age`，那么只要在`query`中添加`age`字段就可以了。
+
+GraphQL的主要优势之一就是允许进行嵌套查询。假如你想加载某一个人写的所有post内容。你可以按照你的类型结构去请求信息：
+
+``` js
+{
+  allPersons {
+    name
+    age
+    posts {
+      title
+    }
+  }
+}
+```
+
+#### 带参数的查询
+
+在GraphQL中，可以指定某一个字段有零或多个参数。例如`allPersons`字段可能有一个`last`参数，目的是为了返回指定数量的`person`。下面是一个这样的查询：
+
+``` js
+{
+  allPersons(last: 2) {
+    name
+  }
+}
+```
+
+### 使用Mutations更改数据
+
+除了向服务器请求信息之外，大多数应用程序还需要某种方式来更改当前存储在后端的数据。在GraphQL中，这些数据的更改通常使用叫做`mutations`来改变。通常有三种`mutations`:
+
+* 创建新数据
+* 更新已存在的数据
+* 删除已存在的数据
+
+`mutation`使用与`query`类似的语法结构，除了它们需要以`mutation`关键词开头。这里有一个如何创建一个新的`Person`的例子：
+
+``` js
+mutation {
+    createPerson(name: "Bob", age: 36) {
+        name
+        age
+    }
+}
+```
+
+注意，与我们之前写的`query`类似，`mutation`也有一个根字段，这里是`createPerson`。我们也已经了解了每个字段都可以有参数。在这里`createPerson`带有两个参数，它们指定了新的`Person`的`name`和`age`。
+
+类似`query`，我们也可以为`mutation`指定附加内容，在这个`mutation`中我们可以指定新的`Person`的属性。在我们的这个例子里显然这样做没有什么用处，因为我们已经通过参数传递了它们。然后当发送`mutation`的时候也能够查询信息是一个非常大的工具，可以让你在一次`mutation`请求中取回新的信息。
+
+上面的`mutation`服务响应看起来像下面这样：
+
+``` js
+"createPerson": {
+  "name": "Bob",
+  "age": "36",
+}
+```
+
+你会经常发现一种模式，GraphQL的类型有当新的对象创建的时候由服务器生成的唯一ID。扩展我们的`Person`类型，我们可以向其中添加id，就像这样：
+
+``` js
+type Person {
+  id: ID!
+  name: String!
+  age: Int!
+}
+```
+
+现在，当一个新的`Person`创建的时候，你可以直接在`mutation`的附加信息中询问id，因为这是在客户端事先不存在的信息：
+
+``` js
+mutation {
+  createPerson(name: "Alice", age: 36) {
+    id
+  }
+}
+```
+
+### 使用订阅模式进行实时更新
+
+当今许多应用程序的另一个重要需求是与服务器进行实时连接，以便立即获知有关重要事件的信息。对于这种情况，GraphQL提供了订阅的概念。
+
+当一个客户端订阅了一个事件，它将初始化并且保持与服务器的稳定连接。每当特定的事件触发的时候，服务器会将相应的数据推送给客户端。与遵循典型的“请求 - 响应 - 循环”的`query`和`mutation`不同，订阅模式代表着一种通过客户端发送的数据流。
+
+订阅模式使用和`query`和`mutation`一样的写法，下面有一个例子，我们在`Person`上订阅了一个事件：
+
+``` js
+subscription {
+  newPerson {
+    name
+    age
+  }
+}
+```
+
+在客户端将此订阅发送到服务器后，它们之间将建立连接。然后无论何时执行新的`mutation`以创建新的`Person`，服务器都会将关于这个`Person`的信息发送给客户端：
+
+``` js
+{
+  "newPerson": {
+    "name": "Jane",
+    "age": 23
+  }
+}
+```
+
+### 定义一个Schema
+
+现在你已经对`query`、`mutation`、`subscriptions`有所了解，让我们将它们放在一起并且学习如何写一个Schema，让你能够去执行目前为止的例子。
+
+在使用GraphQL的时候，`schema`是重点概念之一。它指定了api的功能并定义了客户端如何请求数据。它通常被视为服务器和客户端之间的*合约*。
+
+通常，一个`schema`是一个GraphQL类型的集合。但是，在为api编写`schema`时，有一些特殊的根类型：
+
+``` js
+type Query { ... }
+type Mutation { ... }
+type Subscription { ... }
+```
+
+`Query`、`Mutation`和`Subscription`类型是客户端发送请求的入口点。为了使用我们之前所看到的`allPersons`请求，`Query`类型如下改写：
+
+``` js
+type Query {
+    allPersons: [Person!]!
+}
+```
+
+`allPersons`作为API的根字段，思考一下我们之前的例子：我们向`allPersons`字段添加了`last`参数。我们再次改写：
+
+``` js
+type Query {
+    allPersons(last: Int): [Person!]!
+}
+```
+
+同样对于`createPerson`的`mutation`操作，我们必须在`Mutation`类型里添加根字段：
+
+``` js
+type Mutation {
+  createPerson(name: String!, age: Int!): Person!
+}
+```
+
+注意到这里的根字段带有两个参数，新的`Person`的`name`和`age`属性。
+
+最后对于`subscriptions`，我们必须添加`newPerson`根字段：
+
+``` js
+type Subscription {
+  newPerson: Person!
+}
+```
+
+把它们放在一起，这是你在本章中看到的所有`query`和`mutation`的完整schema：
+
+``` js
+type Query {
+  allPersons(last: Int): [Person!]!
+}
+
+type Mutation {
+  createPerson(name: String!, age: Int!): Person!
+}
+
+type Subscription {
+  newPerson: Person!
+}
+
+type Person {
+  name: String!
+  age: Int!
+  posts: [Post!]!
+}
+
+type Post {
+  title: String!
+  author: Person!
+}
+```
+
+## 整体架构
+
+graphql仅作为规范发布。这意味着GraphQL实际上不过是一个长文档，详细描述了GraphQL服务器的行为。
+
+如果你想要是用GraphQL，你就必须自己去构建GraphQL服务。你可以选择任何语言或者使用像是[Graphcool](http://www.graph.cool/)，它提供了一个强大的开箱即用的GraphQL API。
+
+### 使用案例
+
+在这个部分，我们将介绍三种不同的使用GraphQL服务的架构。
+
+1. 直接连接数据库的GraphQL服务。
+2. GraphQL 服务作为第三方库或者在之前系统基础上面的一层，通过一个GraphQL API集成它们。
+3. 一个综合以上的混合方式
+
+所有这三种架构都代表了graphql的主要用例，并展示了它在项目中的灵活性。
+
+#### 直接连接数据库的GraphQL服务
+
+这种架构对于新建项目来说是最普遍的架构。在设置中，你要有一个实现了GraphQL规范的服务器。当一个`query`到达服务器后，服务器会读取`query`里负载的内容并且向数据库请求必要的数据。这个过程叫做*解析*`query`。然后按照规范的描述构建响应，然后返回给客户端。
+
+这里重点注意的是GraphQL的*transport-layer agnostic（传输层是不确定的）*。这意味着它可以用于任何可用的网络协议。因此它可以基于TCP、Websocket等等来实现一个GraphQL服务。
+
+GraphQL也不会关心数据库及存储在数据库中的数据格式。你可以使用任何一种SQL数据库，像[AWS Aurora](https://aws.amazon.com/rds/aurora)或者是NoSQL数据库，像MongoDB。
+
+
+![A standard greenfield architecture with one GraphQL server that connects to a single database.](./img/standared_greenfield.png)
+
+#### 集成了现有系统的graphql层
+
+GraphQL的另一个主要用例是将多个现有系统集成在一个统一的graphql api后面。这对于那些拥有传统基础设施和许多不同API的公司来说尤其具有吸引力，这些API已经使用并发展了很多年并且现在承担了很高的维护负担。这些遗留系统的一个主要问题是如果要新创建的产品去访问多个系统是几乎不可能的。
+
+在这种情况下，GraphQL可以用来统一这些现有的系统，并将它们的复杂性隐藏在一个很好的GraphQL API后面。通过这样的方式，新的客户端可以很简单的从GraphQL服务获取它们需要的数据。然后GraphQL服务负责从现有系统中获取数据并将其包装成为GraphQL响应格式。
+
+就像上一个架构中，GraphQL服务不关心所使用的数据类型，这次它不关心它需要获取解析`query`所需的数据的数据源。
+
+![GraphQL allows you to hide the complexity of existing systems, such as microservices, legacy infrastructures or third-party APIs behind a single GraphQL interface.](./img/168FvP4.png)
+
+#### 混合式
+
+最后，我们也可以将两种方法混合使用，构建一个能够连接数据库同事也可以与已存在的系统或第三方系统通信的GraphQL服务。
+
+当服务器接受到一个`query`的时候，它将解析它并且将来自数据库或者其他API里拿到的数据进行检索。
+
+![Both approaches can also be combined and the GraphQL server can fetch data from a single database as well as from an existing system - allowing for complete flexibility and pushing all data management complexity to the server.](./img/oOVYriG.png)
+
+### 解析函数
+
+但是我们如何使用GraphQL获得这种灵活性？它是如何如此适合不同的使用场景的？
+
+正如你在上一章学习到的，一个GraphQL的`query`(或者`mutation`)的负载内容包括很多个字段。在GraphQL服务器的实现中，每一个字段实际上是对应一个叫做`resolver`的函数。`resolver`函数的唯一目的是获取对应它这个字段的数据。
+
+当一个服务器接受到一个`query`，它将会调用在`query`的负载内容里每个字段的对应函数。它因此解析了`query`并且能够为每个字段解析正确的数据。一单所有的`resolver`（解析器）返回了数据，服务器将按照`query`描述的格式包装并且发送回客户端。
+
+![Each field in the query corresponds to a resolver function. The GraphQL calls all required resolvers when a query comes in to fetch the specified data.](./img/cP2i8Da.png)
+
+
+### GraphQL 客户端库
+
+GraphQL对于前端开发人员来说特别好，因为它完全消除了REST API所带来的许多不便和缺点，例如请求的内容过多和多次请求内容。
+
+复杂性被放在了服务器端，那里功能强大的机器可以负责繁重的计算工作。客户端不必知道它获取的数据实际来自何处，并且可以使用单个，连贯且灵活的api。
+
+让我们考虑一下在GraphQL中引入的主要变化是从一个非常必要的数据获取方法转变为一个纯粹的声明式转换。
+当从其他API获取数据时，大多数应用程序将不得不经历以下步骤：
+
+1. 构造并发送http请求，例如在JavaScript中使用的`fetch`。
+2. 接受并且解析服务器响应。
+3. 本地存储数据（无论是临时存储还是持久化存储）
+4. 在UI中展示数据。
+
+使用声明式数据获取的方法，客户端只需要做下面两件事：
+
+1. 描述数据的要求。
+2. 在UI中展示数据。
+
+所有较低级别的网络任务以及存储数据应该被抽象出来，并且数据依赖性的声明应该是主要部分。
+
+这正是像Relay或Apollo这样的GraphQL客户端库可以让你做的事情。他们提供了抽象的内容，您需要能够专注于应用程序的重要部分，而不必处理基础结构的重复实施。
