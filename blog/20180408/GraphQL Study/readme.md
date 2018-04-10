@@ -490,3 +490,122 @@ fetch('/authors?ids=1,2')
 
 在JavaScript中，上述策略可以使用名为[DataLoader](https://github.com/facebook/dataloader)的实用程序来实现，并且其他语言也有类似的实用程序。
 
+## 工具和生态系统
+
+### 内省
+
+schema的设计者已经知道schema是什么样子，但客户端如何才能发现通过GraphQL API可访问的内容？我们可以通过查询`__schema`元字段来向GraphQL询问这些信息，该元字段在每个规范的查询根类型上始终可用。
+
+``` js
+query {
+  __schema {
+    types {
+      name
+    }
+  }
+}
+```
+
+以这个schema定义为例：
+
+``` js
+type Query {
+  author(id: ID!): Author
+}
+
+type Author {
+  posts: [Post!]!
+}
+
+type Post {
+  title: String!
+}
+```
+
+如果我们要发送上面提到的内省查询，我们会得到以下结果：
+
+``` js
+{
+  "data": {
+    "__schema": {
+      "types": [
+        {
+          "name": "Query"
+        },
+        {
+          "name": "Author"
+        },
+        {
+          "name": "Post"
+        },
+        {
+          "name": "ID"
+        },
+        {
+          "name": "String"
+        },
+        {
+          "name": "__Schema"
+        },
+        {
+          "name": "__Type"
+        },
+        {
+          "name": "__TypeKind"
+        },
+        {
+          "name": "__Field"
+        },
+        {
+          "name": "__InputValue"
+        },
+        {
+          "name": "__EnumValue"
+        },
+        {
+          "name": "__Directive"
+        },
+        {
+          "name": "__DirectiveLocation"
+        }
+      ]
+    }
+  }
+}
+```
+
+正如你所看到的，我们在schema中查询所有类型。我们获得了我们定义的对象类型和标量类型。我们甚至可以检查内省类型！(We can even introspect the introspection types!)
+
+在内省类型中，还有更多的名称可用。这是另一个例子：
+
+``` js
+{
+  __type(name: "Author") {
+    name
+    description
+  }
+}
+```
+
+在这个例子中，我们使用__type元字段查询单个类型，并询问其名称和描述。这是这个查询的结果：
+
+``` js
+{
+  "data": {
+    "__type": {
+      "name": "Author",
+      "description": "The author of a post.",
+    }
+  }
+}
+```
+
+正如你所看到的，自省是graphql的一个非常强大的功能，我们只是简单的了解了一下。该规范更详细地介绍了内省模式中可用的字段和类型。
+
+GraphQL生态系统中提供的许多工具都使用自检系统来提供令人惊叹的功能。想想文档浏览器，自动完成，代码生成，一切皆有可能！在构建和使用GraphQL APIs时，您将需要的最有用的工具之一是大量使用自检。它被称为**GraphiQL**。
+
+### GraphiQL
+
+GraphiQL是用于编写，验证和测试graphql查询的浏览器内IDE。它具有一个用于graphql查询的编辑器，配备了自动完成和验证以及一个文档浏览器，可以快速查看架构的结构（由内省提供支持）。
+
+它是一个令人难以置信的强大的开发工具。它允许您在GraphQL服务器上调试和尝试查询，而无需通过curl编写普通的GraphQL查询。
