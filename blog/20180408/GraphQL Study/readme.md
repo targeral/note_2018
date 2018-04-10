@@ -376,3 +376,117 @@ GraphQL一个主要的优点是允许你能够以声明的方式获取或更新�
 
 ## 服务器端
 
+GraphQL通常被认为为一种以前端为中心的API技术，因为它使客户能够以比以前更好的方式获取数据。但是API本身当然是在服务器端实现的。对于服务器还有很多好处，因为GraphQL使服务器开发人员能够专注于描述可用数据，而不是实现和优化特定接口。
+
+### GraphQL的执行
+
+GraphQL不只是指定一种方法来描述Schema，也不是仅仅是一种以从这些Schema中检索数据的查询语言，而是关于如何将这些查询转换为结果的实际执行算法。这个算法的核心非常简单：query的逐个字段遍历，对于每个字段执行相应的`resolver`函数。所以，假设我们有以下模式：
+
+``` js
+type Query {
+  author(id: ID!): Author
+}
+
+type Author {
+  posts: [Post]
+}
+
+type Post {
+  title: String
+  content: String
+}
+```
+
+下面是我们可以发送到具有该Schema的服务器的查询：
+
+``` js
+query {
+  author(id: "abc") {
+    posts {
+      title
+      content
+    }
+  }
+}
+```
+
+首先要看的是查询中的每个字段都可以与一个类型关联:
+
+``` js
+query: Query {
+  author(id: "abc"): Author {
+    posts: [Post] {
+      title: String
+      content: String
+    }
+  }
+}
+```
+
+现在我们会很容易的发现在我们的服务器上运行着对应字段的解析器，执行从查询类型开始，并且先进行宽度优先遍历。这意味着我们会先去运行`Query.author`的解析器。然后我们会得到解析器返回的结果，并把它传递给它的子项，也就是`Author.posts`的解析器。在下一级，结果是一个列表。所以在这种情况下，执行算法在每一项都执行一次。所以执行如下所示：
+
+``` js
+Query.author(root, { id: 'abc' }, context) -> author
+Author.posts(author, null, context) -> posts
+for each post in posts
+  Post.title(post, null, context) -> title
+  Post.content(post, null, context) -> content
+```
+
+最后，执行算法将所有内容放在一起形成正确的结果并返回它。
+
+有一件事情要注意，大多数的GraphQL服务的实现都会提供默认解析器。因此你不必为每个字段都指定解析器函数。例如，在GraphQL.js中，当解析器的父对象包含具有正确名称的字段时，不需要指定解析器。
+
+### Batched Resolving
+
+你可能会注意到上面执行策略的有一点傻（that it’s somewhat naive）。例如，如果你有一个从后端api或数据库中提取数据的解析器，那么在执行一个查询期间可能会多次调用该后端。让我们想象一下从一些posts里获取author，像是这样：
+
+``` js
+query {
+  posts {
+    title
+    author {
+      name
+      avatar
+    }
+  }
+}
+```
+
+如果这些是博客上的帖子，很可能很多帖子都会有相同的作者。所以如果我们需要调用API来获取每个author对象，我们可能会无意中会发出多个同样的请求。例如：
+
+``` js
+fetch('/authors/1')
+fetch('/authors/2')
+fetch('/authors/1')
+fetch('/authors/2')
+fetch('/authors/1')
+fetch('/authors/2')
+```
+
+我们如何解决这个问题？通过让我们获取数据更聪明一些，我们可以将获取数据的方法包装成为一个实用的方法，该方法会等待所有的解析器都执行之后，然后确保每一项只执行一次获取数据：
+
+``` js
+authorLoader = new AuthorLoader()
+
+// Queue up a bunch of fetches
+authorLoader.load(1);
+authorLoader.load(2);
+authorLoader.load(1);
+authorLoader.load(2);
+
+// Then, the loader only does the minimal amount of work
+fetch('/authors/1');
+fetch('/authors/2'); 
+```
+
+我们有没有更好的方法？有的，如果我们的API支持批量请求，我们只能对后端进行一次获取，如下所示：
+
+``` js
+fetch('/authors?ids=1,2')
+```
+
+这也可以封装在上面的加载器中。
+
+在JavaScript中，上述策略可以使用名为[DataLoader](https://github.com/facebook/dataloader)的实用程序来实现，并且其他语言也有类似的实用程序。
+
